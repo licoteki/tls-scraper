@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 openssl-sys = "0.9"
 openssl = "0.10"
+iprange = "0.6.7"
+ipnet = "2.5.0"
