@@ -1,9 +1,9 @@
-use ipnet::Ipv4Net;
-use iprange::IpRange;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use std::env;
 use std::net::TcpStream;
 use std::process::exit;
+use std::time::Duration;
+use ipaddress::IPAddress;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -12,13 +12,10 @@ fn main() {
         exit(1);
     }
 
-    let mut ip_range: IpRange<Ipv4Net> = IpRange::new();
-
-    match args[1].parse::<Ipv4Net>() {
-        Ok(n) => ip_range.add(n),
+    let ip: IPAddress = match IPAddress::parse(&args[1]) {
+        Ok(ip) => ip,
         Err(e) => {
-            eprintln!("{}", e);
-            usage();
+            eprintln!("Can't parse input ip address. :{}", e);
             exit(1);
         }
     };
@@ -27,17 +24,32 @@ fn main() {
     connector_builder.set_verify(SslVerifyMode::empty());
     let connector = connector_builder.build();
 
-    for ip in ip_range.iter() {
-        let stream = TcpStream::connect(format!("{}:443", ip.addr())).unwrap();
-        let tls_stream = connector
-            .connect(format!("{}", ip.addr()).as_str(), stream)
-            .unwrap();
+    ip.each_host(|i| {
+        let ip_str = i.to_s();
+        print!("{}:", ip_str);
+        let socket_address = format!("{}:443", ip_str).parse().unwrap();
+        let stream = match TcpStream::connect_timeout(&socket_address, Duration::new(2, 0)) {
+            Ok(s) => s,
+            Err(_) => {
+                println!("Failed estabilish connection using tcp.");
+                return;
+            }
+        };
+
+        let tls_stream = match connector.connect(&i.to_s().as_str(), stream) {
+            Ok(t) => t,
+            Err(_) => {
+                println!("Failed estabilish connection using tls.");
+                return;
+            }
+        };
+
         let ssl = tls_stream.ssl();
         let cert = ssl.peer_certificate().unwrap();
         cert.subject_name()
             .entries()
             .for_each(|x| println!("{:?}", x.data().as_utf8().unwrap()));
-    }
+    });
 }
 
 fn usage() {
